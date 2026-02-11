@@ -295,32 +295,56 @@ function parseUpdate(query: string, params: any[]): any {
 
   return updates;
 }
+ 
+
+export function createTable(sql: string) {
+  db.execSync(sql);
+}
+
+export function createIndexes(indexes: string[]) {
+  indexes.forEach((sql) => db.execSync(sql));
+}
+export function generateIndexesSQL(tableName: string): string[] {
+  return [
+    `CREATE INDEX IF NOT EXISTS idx_${tableName}_active ON ${tableName}(active);`,
+    `CREATE INDEX IF NOT EXISTS idx_${tableName}_modified ON ${tableName}(lastModifiedOn);`,
+  ];
+}
 
 const createTablesNative = async () => {
   if (!db) throw new Error('Database not initialized');
 
   await db.execAsync(`
     -- Warehouses
-    CREATE TABLE IF NOT EXISTS warehouses (
-      id TEXT PRIMARY KEY,
-      code TEXT UNIQUE NOT NULL,
-      name TEXT NOT NULL,
-      location TEXT,
-      is_active INTEGER DEFAULT 1,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
+    drop TABLE  warehouses 
+     
+
+      CREATE TABLE IF NOT EXISTS warehouses (
+  code TEXT NOT NULL,
+  name TEXT NOT NULL,
+  location TEXT NOT NULL,
+  lastModifiedBy TEXT NOT NULL,
+  lastModifiedOn TEXT,
+  active INTEGER NOT NULL DEFAULT 1,
+  PRIMARY KEY ( code)
+);
+
 
     -- Routes
-    CREATE TABLE IF NOT EXISTS routes (
-      id TEXT PRIMARY KEY,
-      code TEXT UNIQUE NOT NULL,
-      name TEXT NOT NULL,
-      description TEXT,
-      is_active INTEGER DEFAULT 1,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
+ 
+ 
+
+-- Create the Route table
+  CREATE TABLE IF NOT EXISTS Routes (
+  code TEXT NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL,
+  lastModifiedBy TEXT NOT NULL,
+  lastModifiedOn TEXT,
+  active INTEGER NOT NULL DEFAULT 1,
+  PRIMARY KEY ( code)
+);
+
 
     -- Users
     CREATE TABLE IF NOT EXISTS users (

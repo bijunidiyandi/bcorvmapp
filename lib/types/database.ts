@@ -8,8 +8,8 @@ export interface Database {
       };
       routes: {
         Row: Route;
-        Insert: Omit<Route, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<Route, 'id' | 'created_at' | 'updated_at'>>;
+        Insert: Omit<Route, 'code'>;
+        Update: Partial<Omit<Route, 'code' >>;
       };
       warehouses: {
         Row: Warehouse;
@@ -113,23 +113,35 @@ export interface Van {
 }
 
 export interface Route {
-  id: string;
+ 
   code: string;
   name: string;
-  description: string | null;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
+  description: string;
+  lastModifiedBy: string;
+  lastModifiedOn?: string | null;
+  active: boolean;
 }
+export type CreateRouteInput = {
+  code: string;
+  name: string;
+  description: string;
+  active?: boolean;
+};
 
 export interface Warehouse {
-  id: string;
   code: string;
   name: string;
-  location: string | null;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
+  location: string;
+  lastModifiedBy: string;
+  lastModifiedOn?: string;
+  active: boolean;
+}
+
+export interface CreateWarehouseInput {
+  code: string;
+  name: string;
+  location: string;
+  active?: boolean;
 }
 
 export interface ItemCategory {

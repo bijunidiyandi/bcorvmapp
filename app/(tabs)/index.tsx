@@ -13,7 +13,7 @@ import {
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors, shadows, borderRadius, spacing, withOpacity, gradients } from '@/constants/colors';
-import { useAuth } from '@/lib/contexts/AuthContext';
+import { useAuth } from '@/lib/contexts/AuthContextNew';
 import { useVan } from '@/lib/contexts/VanContext';
 import { useSession } from '@/lib/contexts/SessionContext';
 import { dashboardApi, vanApi } from '@/lib/services/sqlite-api';

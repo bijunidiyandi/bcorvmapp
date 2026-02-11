@@ -11,7 +11,7 @@ import {
   Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useAuth } from '@/lib/contexts/AuthContext';
+import { useAuth } from '@/lib/contexts/AuthContextNew';
 import { colors } from '@/constants/colors';
 import { LogIn, User, Lock } from 'lucide-react-native';
 import { Button } from '@/components/common/Button';
@@ -22,7 +22,18 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const { signIn, user, loading: authLoading, isAuthenticated } = useAuth();
   const router = useRouter();
-
+useEffect(() => {
+  fetch('http://192.168.1.38:5256/api/health')
+    .then(res => res.text())
+    .then(data => {
+      console.log('HEALTH OK:', data);
+      alert('API OK');
+    })
+    .catch(err => {
+      console.log('HEALTH ERROR:', err);
+      alert('API FAILED: ' + JSON.stringify(err));
+    });
+}, []);
   useEffect(() => {
     if (isAuthenticated && !authLoading) {
       router.replace('/(tabs)');
@@ -37,6 +48,7 @@ export default function LoginScreen() {
 
     setLoading(true);
     try {
+      console.log('signIn')
       await signIn(userId.trim(), password);
     } catch (error: any) {
       Alert.alert('Login Failed', error.message || 'Invalid credentials');
@@ -63,7 +75,7 @@ export default function LoginScreen() {
           <View style={styles.iconContainer}>
             <LogIn size={48} color={colors.primary} />
           </View>
-          <Text style={styles.title}>Van Sales System</Text>
+          <Text style={styles.title}>BCor Van Sales System</Text>
           <Text style={styles.subtitle}>Sign in to your account</Text>
         </View>
 

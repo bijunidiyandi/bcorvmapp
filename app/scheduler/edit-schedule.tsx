@@ -16,7 +16,7 @@ import { Loading } from '@/components/common/Loading';
 import { Toast } from '@/components/common/Toast';
 import { scheduleApi, routeApi, customerApi } from '@/lib/services/sqlite-api';
 import { ChevronLeft, Plus, Trash2, MapPin, Calendar } from 'lucide-react-native';
-import { useAuth } from '@/lib/contexts/AuthContext';
+import { useAuth } from '@/lib/contexts/AuthContextNew';
 
 export default function EditScheduleScreen() {
   const router = useRouter();

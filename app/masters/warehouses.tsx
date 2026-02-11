@@ -8,34 +8,37 @@ import {
   TextInput,
   Modal,
   Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '@/constants/colors';
-import { warehouseApi } from '@/lib/services/sqlite-api';
-import { Warehouse } from '@/lib/types/database';
+import { warehousesApi } from '@/lib/services/sqlite-api';
+import { Warehouse, CreateWarehouseInput } from '@/lib/types/database';
 import { Button } from '@/components/common/Button';
 import { Loading } from '@/components/common/Loading';
 import { EmptyState } from '@/components/common/EmptyState';
 import { MasterListItem } from '@/components/masters/MasterListItem';
 import { SearchBar } from '@/components/masters/SearchBar';
-import { ArrowLeft, Plus, Warehouse as WarehouseIcon, X } from 'lucide-react-native';
+import { ArrowLeft, Plus, MapPin, X, RefreshCw } from 'lucide-react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { createEntity, fetchEntity, updateEntity } from '@/lib/services/webapi';
 
+// Alert helper
 const showAlert = (title: string, message: string, onDismiss?: () => void) => {
   if (Platform.OS === 'web') {
     alert(`${title}\n\n${message}`);
     onDismiss?.();
   } else {
     const AlertModule = require('react-native').Alert;
-    if (onDismiss) {
-      AlertModule.alert(title, message, [{ text: 'OK', onPress: onDismiss }]);
-    } else {
-      AlertModule.alert(title, message);
-    }
+    AlertModule.alert(title, message, [{ text: 'OK', onPress: onDismiss }]);
   }
 };
 
 export default function WarehousesScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+
   const [loading, setLoading] = useState(true);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -43,20 +46,22 @@ export default function WarehousesScreen() {
   const [editingWarehouse, setEditingWarehouse] = useState<Warehouse | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<CreateWarehouseInput>({
     code: '',
     name: '',
     location: '',
-    is_active: true,
+    active: true,
   });
 
+  // Load warehouses from SQLite
   useEffect(() => {
     loadWarehouses();
   }, []);
 
   const loadWarehouses = async () => {
+    setLoading(true);
     try {
-      const data = await warehouseApi.getAll(true);
+      const data = await warehousesApi.getAll(true);
       setWarehouses(data);
     } catch (err) {
       console.error('Error loading warehouses:', err);
@@ -68,12 +73,7 @@ export default function WarehousesScreen() {
 
   const handleAdd = () => {
     setEditingWarehouse(null);
-    setFormData({
-      code: '',
-      name: '',
-      location: '',
-      is_active: true,
-    });
+    setFormData({ code: '', name: '', location: '', active: true });
     setShowForm(true);
   };
 
@@ -82,26 +82,62 @@ export default function WarehousesScreen() {
     setFormData({
       code: warehouse.code,
       name: warehouse.name,
-      location: warehouse.location || '',
-      is_active: warehouse.is_active,
+      location: warehouse.location,
+      active: warehouse.active,
     });
     setShowForm(true);
   };
 
+  /** Save warehouse to SQLite (and optionally sync with Web API) */
   const handleSave = async () => {
-    if (!formData.code.trim() || !formData.name.trim()) {
-      showAlert('Error', 'Code and name are required');
+    if (!formData.code.trim() || !formData.name.trim() || !formData.location.trim()) {
+      showAlert('Error', 'Code, Name and Location are required');
       return;
     }
 
     setSaving(true);
     try {
+      let savedWarehouse: Warehouse | null = null;
+
       if (editingWarehouse) {
-        await warehouseApi.update(editingWarehouse.id, formData);
+        // UPDATE SQLite
+        savedWarehouse = await warehousesApi.update(editingWarehouse.code, formData);
+
+        // Optionally update Web API
+        try {
+          await updateEntity('Warehouses', editingWarehouse.code, formData);
+        } catch (apiErr) {
+          console.warn('Web API update failed, offline sync needed', apiErr);
+          showAlert(
+            'Warning',
+            'Warehouse updated locally but failed to sync with server. It will retry later.'
+          );
+        }
       } else {
-        await warehouseApi.create(formData);
+        // CREATE SQLite
+        savedWarehouse = await warehousesApi.create(formData);
+
+        // Optionally create Web API
+        try {
+          await createEntity('Warehouses', formData);
+        } catch (apiErr) {
+          console.warn('Web API create failed, offline sync needed', apiErr);
+          showAlert(
+            'Warning',
+            'Warehouse created locally but failed to sync with server. It will retry later.'
+          );
+        }
       }
-      await loadWarehouses();
+
+      // Update local state
+      if (editingWarehouse) {
+        setWarehouses((prev) =>
+          prev.map((w) => (w.code === editingWarehouse.code ? { ...w, ...formData } : w))
+        );
+      } else if (savedWarehouse) {
+        setWarehouses((prev) => [...prev, savedWarehouse]);
+      }
+
       setShowForm(false);
     } catch (err: any) {
       console.error('Error saving warehouse:', err);
@@ -111,17 +147,41 @@ export default function WarehousesScreen() {
     }
   };
 
+  /** Hard refresh: clear SQLite → fetch from API → insert */
+  const handleHardRefresh = async () => {
+    setLoading(true);
+    try {
+      console.log('HARD REFRESH START');
+      const apiWarehouses: Warehouse[] = await fetchEntity('Warehouses');
+      console.log('API warehouses count:', apiWarehouses.length);
+
+      await warehousesApi.clearAll();
+            console.log('clearAll');
+      await warehousesApi.bulkInsert(apiWarehouses);
+    console.log('bulkInsert');
+      const refreshed = await warehousesApi.getAll(true);
+      console.log('REFRESHED SQLITE DATA:', refreshed);
+      setWarehouses(refreshed);
+
+      showAlert('Success', 'Warehouses refreshed from server');
+    } catch (err: any) {
+      console.error('Hard refresh failed:', err);
+      showAlert('Error', err?.message || 'Failed to refresh warehouses');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const filteredWarehouses = warehouses.filter(
     (w) =>
       w.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      w.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (w.location && w.location.toLowerCase().includes(searchQuery.toLowerCase()))
+      w.code.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   if (loading) {
     return (
       <View style={styles.container}>
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: insets.top + 20 }]}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
             <ArrowLeft size={24} color={colors.text} />
           </TouchableOpacity>
@@ -135,16 +195,23 @@ export default function WarehousesScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      {/* HEADER */}
+      <View style={[styles.header, { paddingTop: insets.top + 20 }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <ArrowLeft size={24} color={colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Warehouses</Text>
-        <TouchableOpacity onPress={handleAdd} style={styles.addButton}>
-          <Plus size={24} color={colors.primary} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: 12 }}>
+          <TouchableOpacity onPress={handleHardRefresh}>
+            <RefreshCw size={22} color={colors.text} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleAdd}>
+            <Plus size={24} color={colors.primary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
+      {/* SEARCH */}
       <View style={styles.content}>
         <View style={styles.searchContainer}>
           <SearchBar
@@ -154,9 +221,10 @@ export default function WarehousesScreen() {
           />
         </View>
 
+        {/* WAREHOUSES LIST OR EMPTY */}
         {filteredWarehouses.length === 0 ? (
           <EmptyState
-            icon={WarehouseIcon}
+            icon={MapPin}
             title="No Warehouses Found"
             message={
               searchQuery
@@ -167,41 +235,63 @@ export default function WarehousesScreen() {
             onAction={searchQuery ? undefined : handleAdd}
           />
         ) : (
-          <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-            {filteredWarehouses.map((warehouse) => (
+          <ScrollView
+            style={styles.scrollView}
+            contentContainerStyle={styles.scrollContent}
+          >
+            {filteredWarehouses.map((w) => (
               <MasterListItem
-                key={warehouse.id}
-                title={warehouse.name}
-                subtitle={`${warehouse.code}${warehouse.location ? ` • ${warehouse.location}` : ''}`}
-                isActive={warehouse.is_active}
-                onPress={() => handleEdit(warehouse)}
+                key={w.code}
+                title={w.name}
+                subtitle={`${w.code}${w.location ? ` • ${w.location}` : ''}`}
+                isActive={w.active}
+                onPress={() => handleEdit(w)}
               />
             ))}
           </ScrollView>
         )}
       </View>
 
-      <Modal visible={showForm} animationType="slide" transparent={true} onRequestClose={() => setShowForm(false)}>
+      {/* MODAL FORM */}
+      <Modal
+        visible={showForm}
+        animationType="slide"
+        transparent
+        statusBarTranslucent
+        onRequestClose={() => setShowForm(false)}
+      >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                {editingWarehouse ? 'Edit Warehouse' : 'Add Warehouse'}
-              </Text>
-              <TouchableOpacity onPress={() => setShowForm(false)} style={styles.modalCloseButton}>
-                <X size={24} color={colors.text} />
-              </TouchableOpacity>
-            </View>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={styles.bottomSheetWrapper}
+          >
+            <SafeAreaView style={styles.bottomSheet} edges={['bottom']}>
+              {/* HEADER */}
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>
+                  {editingWarehouse ? 'Edit Warehouse' : 'Add Warehouse'}
+                </Text>
+                <TouchableOpacity onPress={() => setShowForm(false)}>
+                  <X size={24} color={colors.text} />
+                </TouchableOpacity>
+              </View>
 
-            <ScrollView style={styles.formScrollView}>
-              <View style={styles.form}>
+              {/* FORM */}
+              <ScrollView
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{
+                  padding: 20,
+                  paddingBottom: 140,
+                }}
+              >
                 <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>Code *</Text>
                   <TextInput
-                    style={styles.input}
+                    style={[styles.input, editingWarehouse && styles.inputDisabled]}
                     value={formData.code}
-                    onChangeText={(text) => setFormData({ ...formData, code: text })}
-                    placeholder="Enter code"
+                    editable={!editingWarehouse}
+                    selectTextOnFocus={!editingWarehouse}
+                    onChangeText={(t) => setFormData({ ...formData, code: t })}
                   />
                 </View>
 
@@ -210,18 +300,16 @@ export default function WarehousesScreen() {
                   <TextInput
                     style={styles.input}
                     value={formData.name}
-                    onChangeText={(text) => setFormData({ ...formData, name: text })}
-                    placeholder="Enter name"
+                    onChangeText={(t) => setFormData({ ...formData, name: t })}
                   />
                 </View>
 
                 <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Location</Text>
+                  <Text style={styles.inputLabel}>Location *</Text>
                   <TextInput
                     style={styles.input}
                     value={formData.location}
-                    onChangeText={(text) => setFormData({ ...formData, location: text })}
-                    placeholder="Enter location"
+                    onChangeText={(t) => setFormData({ ...formData, location: t })}
                   />
                 </View>
 
@@ -229,38 +317,54 @@ export default function WarehousesScreen() {
                   <Text style={styles.inputLabel}>Active</Text>
                   <TouchableOpacity
                     style={styles.toggle}
-                    onPress={() => setFormData({ ...formData, is_active: !formData.is_active })}
+                    disabled={true} // always disabled in modal
+                    onPress={() =>
+                      setFormData({ ...formData, active: !formData.active })
+                    }
                   >
-                    <View style={[styles.toggleTrack, formData.is_active && styles.toggleTrackActive]}>
-                      <View style={[styles.toggleThumb, formData.is_active && styles.toggleThumbActive]} />
+                    <View
+                      style={[
+                        styles.toggleTrack,
+                        formData.active && styles.toggleTrackActive,
+                      ]}
+                    >
+                      <View
+                        style={[styles.toggleThumb, formData.active && styles.toggleThumbActive]}
+                      />
                     </View>
-                    <Text style={styles.toggleLabel}>{formData.is_active ? 'Active' : 'Inactive'}</Text>
+                    <Text style={styles.toggleLabel}>
+                      {formData.active ? 'Active' : 'Inactive'}
+                    </Text>
                   </TouchableOpacity>
                 </View>
-              </View>
-            </ScrollView>
+              </ScrollView>
 
-            <View style={styles.formActions}>
-              <Button
-                title="Cancel"
-                onPress={() => setShowForm(false)}
-                variant="outline"
-                style={styles.actionButton}
-              />
-              <Button
-                title={saving ? 'Saving...' : 'Save'}
-                onPress={handleSave}
-                disabled={saving}
-                style={styles.actionButton}
-              />
-            </View>
-          </View>
+              {/* FOOTER */}
+              <View style={styles.fixedFooter}>
+                <Button
+                  title="Cancel"
+                  variant="outline"
+                  onPress={() => setShowForm(false)}
+                  style={{ flex: 1 }}
+                />
+                <Button
+                  title={saving ? 'Saving...' : 'Save'}
+                  onPress={handleSave}
+                  disabled={saving}
+                  style={{ flex: 1 }}
+                />
+              </View>
+            </SafeAreaView>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
     </View>
   );
 }
 
+// ========================
+// STYLES
+// ========================
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
   header: {
@@ -268,7 +372,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 60,
     paddingBottom: 20,
     backgroundColor: colors.white,
     borderBottomWidth: 1,
@@ -276,17 +379,39 @@ const styles = StyleSheet.create({
   },
   backButton: { padding: 8, width: 40 },
   headerTitle: { fontSize: 20, fontWeight: '700', color: colors.text },
-  addButton: { padding: 8 },
   content: { flex: 1 },
   searchContainer: { padding: 20 },
   scrollView: { flex: 1 },
   scrollContent: { paddingHorizontal: 20, paddingBottom: 20 },
+  inputGroup: { gap: 8, marginBottom: 12 },
+  inputLabel: { fontSize: 14, fontWeight: '600', color: colors.text },
+  input: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 16,
+    color: colors.text,
+    backgroundColor: colors.white,
+    minHeight: 44,
+  },
+  inputDisabled: { backgroundColor: '#f0f0f0', color: '#888' },
+  toggleGroup: { gap: 8 },
+  toggle: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  toggleTrack: { width: 48, height: 28, borderRadius: 14, backgroundColor: colors.border, padding: 2 },
+  toggleTrackActive: { backgroundColor: colors.primary },
+  toggleThumb: { width: 24, height: 24, borderRadius: 12, backgroundColor: colors.white },
+  toggleThumbActive: { marginLeft: 20 },
+  toggleLabel: { fontSize: 14, color: colors.text },
   modalOverlay: { flex: 1, backgroundColor: colors.overlay, justifyContent: 'flex-end' },
-  modalContent: {
+  bottomSheetWrapper: { flex: 1, justifyContent: 'flex-end' },
+  bottomSheet: {
+    height: '50%',
     backgroundColor: colors.white,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    maxHeight: '50%',
+    overflow: 'hidden',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -298,33 +423,18 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   modalTitle: { fontSize: 20, fontWeight: '700', color: colors.text },
-  modalCloseButton: { padding: 4 },
-  formScrollView: { maxHeight: 300 },
-  form: { padding: 20, gap: 16 },
-  inputGroup: { gap: 8 },
-  inputLabel: { fontSize: 14, fontWeight: '600', color: colors.text },
-  input: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    color: colors.text,
-    backgroundColor: colors.white,
-  },
-  toggleGroup: { gap: 8 },
-  toggle: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  toggleTrack: { width: 48, height: 28, borderRadius: 14, backgroundColor: colors.border, padding: 2 },
-  toggleTrackActive: { backgroundColor: colors.primary },
-  toggleThumb: { width: 24, height: 24, borderRadius: 12, backgroundColor: colors.white },
-  toggleThumbActive: { marginLeft: 20 },
-  toggleLabel: { fontSize: 14, color: colors.text },
-  formActions: {
+  fixedFooter: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
     flexDirection: 'row',
     gap: 12,
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 16,
     borderTopWidth: 1,
     borderTopColor: colors.border,
+    backgroundColor: colors.white,
   },
-  actionButton: { flex: 1 },
 });

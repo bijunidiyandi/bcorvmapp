@@ -13,7 +13,15 @@ import {
   CustomerCategory,
   VanStock,
   User,
+  CreateRouteInput,
+  CreateWarehouseInput,
 } from '../types/database';
+import { requireEnv } from '../utils/env';
+import { getLoggedInUserName } from './auth.api';
+export const COMPANY_ID = requireEnv('EXPO_PUBLIC_COMPANY_ID');
+export const SITE_ID = requireEnv('EXPO_PUBLIC_SITE_ID');
+
+
 
 function generateUUID(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
@@ -37,6 +45,13 @@ export const vanApi = {
     const result = await db.getAllAsync('SELECT * FROM vans WHERE id = ?', [id]);
     return result[0] || null;
   },
+
+  async clearAll(): Promise<void> {
+    const db = getDatabase();
+    await db.runAsync('DELETE FROM vans');
+  },
+
+
 
   async create(van: Omit<Van, 'id' | 'created_at'>): Promise<Van> {
     const db = getDatabase();
@@ -388,137 +403,302 @@ export const dashboardApi = {
   },
 };
 
+
 export const routeApi = {
+  
+async clearAll(): Promise<void> {
+  const db = getDatabase();
+  await db.runAsync('DELETE FROM warehouses');
+
+},
+ async bulkInsert(routes: Route[]): Promise<void> {
+    const db = getDatabase();
+    console.log('bulkInsert routeApi')
+    try {
+      await db.runAsync('BEGIN TRANSACTION');
+
+      const sql = `
+        INSERT OR REPLACE INTO routes
+        (id, code, name, description, active, lastModifiedOn, lastModifiedBy)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `;
+
+      for (const r of routes) {
+        await db.runAsync(sql, [
+       
+          r.code,
+          r.name,
+          r.description ?? '',
+          r.active ? 1 : 0,
+          r.lastModifiedOn ?? new Date().toISOString(),
+          r.lastModifiedBy ?? await getLoggedInUserName(),,
+        ]);
+      }
+
+      await db.runAsync('COMMIT');
+      console.log('Routes synced:', routes.length);
+    } catch (e) {
+      await db.runAsync('ROLLBACK');
+      throw e;
+    }
+    const db2 = getDatabase();
+const debug = await db2.getAllAsync('SELECT code,name,active FROM routes');
+console.log('DEBUG SQLITE ROUTES:', debug);
+  }
+,
   async getAll(includeInactive = false): Promise<Route[]> {
     const db = getDatabase();
     const query = includeInactive
-      ? 'SELECT * FROM routes ORDER BY name'
-      : 'SELECT * FROM routes WHERE is_active = 1 ORDER BY name';
+      ? 'SELECT * FROM Routes ORDER BY name'
+      : 'SELECT * FROM Routes WHERE active = 1 ORDER BY name';
     return await db.getAllAsync(query);
   },
 
   async getById(id: string): Promise<Route | null> {
     const db = getDatabase();
-    const result = await db.getAllAsync('SELECT * FROM routes WHERE id = ?', [id]);
+    const result = await db.getAllAsync('SELECT * FROM Routes WHERE code = ?', [id]);
     return result[0] || null;
   },
+async create(
+  input: CreateRouteInput
+): Promise<Route> {
 
-  async create(route: Omit<Route, 'id' | 'created_at'>): Promise<Route> {
-    const db = getDatabase();
-    const id = generateUUID();
-    const created_at = new Date().toISOString();
+  const db = getDatabase();
 
-    await db.runAsync(
-      `INSERT INTO routes (id, code, name, description, is_active, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [
-        id,
-        route.code,
-        route.name,
-        route.description || null,
-        route.is_active !== undefined ? (route.is_active ? 1 : 0) : 1,
-        created_at,
-      ]
-    );
+  const route: Route = {
 
-    return { id, ...route, created_at } as Route;
-  },
+ 
+ 
 
-  async update(id: string, route: Partial<Route>): Promise<Route> {
-    const db = getDatabase();
-    const fields: string[] = [];
-    const values: any[] = [];
+    code: input.code,
+    name: input.name,
+    description: input.description,
+    active: input.active ?? true,
 
-    Object.entries(route).forEach(([key, value]) => {
-      if (key !== 'id' && key !== 'created_at' && value !== undefined) {
-        fields.push(`${key} = ?`);
-        values.push(typeof value === 'boolean' ? (value ? 1 : 0) : value);
-      }
-    });
+  
+    lastModifiedBy: await getLoggedInUserName(),
+    lastModifiedOn: new Date().toISOString(),
+  };
 
-    if (fields.length > 0) {
-      values.push(id);
-      await db.runAsync(
-        `UPDATE routes SET ${fields.join(', ')} WHERE id = ?`,
-        values
+  await db.runAsync(
+    `
+    INSERT INTO Routes (
+    
+      Code,
+      Name,
+      Description,
+      LastModifiedBy,
+      LastModifiedOn,
+      Active
+    )
+    VALUES (?, ?, ?,  ?, ?, ?)
+    `,
+    [
+      route.code,
+      route.name,
+      route.description,
+      route.lastModifiedBy,
+      route.lastModifiedOn,
+      route.active ? 1 : 0,
+    ]
+  );
+
+  return route;
+}
+
+,
+async update(id: string, route: Partial<Route>): Promise<Route> {
+  const db = getDatabase();
+  const fields: string[] = [];
+  const values: any[] = [];
+
+  console.log('Object.entries(route)', Object.entries(route));
+
+  Object.entries(route).forEach(([key, value]) => {
+      if (key !== 'code' && value !== undefined) {
+      
+      fields.push(`${key} = ?`);
+      values.push(
+        typeof value === 'boolean' ? (value ? 1 : 0) : value
       );
     }
+  });
 
+  if (fields.length === 0) {
     return (await this.getById(id))!;
-  },
+  }
+
+  // WHERE parameter
+  values.push(id);
+
+  const sql = `
+    UPDATE routes
+    SET ${fields.join(', ')}
+    WHERE code = ?
+  `;
+
+
+
+  await db.runAsync(sql, values);
+
+  return (await this.getById(id))!;
+}
+,
 
   async delete(id: string): Promise<void> {
     const db = getDatabase();
-    await db.runAsync('DELETE FROM routes WHERE id = ?', [id]);
+    await db.runAsync('DELETE FROM routes WHERE code = ?', [id]);
   },
 };
+export const warehousesApi = {
 
-export const warehouseApi = {
+  /* ---------------- CLEAR ALL ---------------- */
+  async clearAll(): Promise<void> {
+    const db = getDatabase();
+
+await db.runAsync('DELETE FROM warehouses');
+
+
+  },
+
+  /* ---------------- BULK INSERT / SYNC ---------------- */
+/* ---------------- BULK INSERT / SYNC ---------------- */
+async bulkInsert(warehouses: Warehouse[]): Promise<void> {
+  const db = getDatabase();
+
+  try {
+    // Web + Mobile compatible transaction
+    await db.runAsync('BEGIN TRANSACTION');
+
+    const sql = `
+      INSERT OR REPLACE INTO warehouses
+      (code, name, location, lastModifiedBy, lastModifiedOn, active)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `;
+
+    for (const w of warehouses) {
+      await db.runAsync(sql, [
+        w.code,
+        w.name,
+        w.location ?? '',
+        w.lastModifiedBy ?? await getLoggedInUserName(),,
+        w.lastModifiedOn ?? new Date().toISOString(),
+        w.active ? 1 : 0,
+      ]);
+    }
+
+    await db.runAsync('COMMIT');
+
+    console.log('Warehouses bulk insert completed:', warehouses.length);
+  } catch (err) {
+    console.error('Bulk insert failed, rolling back:', err);
+
+    await db.runAsync('ROLLBACK');
+
+    throw err;
+  }
+}
+,
+  /* ---------------- GET ALL ---------------- */
   async getAll(includeInactive = false): Promise<Warehouse[]> {
     const db = getDatabase();
     const query = includeInactive
       ? 'SELECT * FROM warehouses ORDER BY name'
-      : 'SELECT * FROM warehouses WHERE is_active = 1 ORDER BY name';
+      : 'SELECT * FROM warehouses WHERE active = 1 ORDER BY name';
+
     return await db.getAllAsync(query);
   },
 
-  async getById(id: string): Promise<Warehouse | null> {
+  /* ---------------- GET BY ID ---------------- */
+  async getById(code: string): Promise<Warehouse | null> {
     const db = getDatabase();
-    const result = await db.getAllAsync('SELECT * FROM warehouses WHERE id = ?', [id]);
+    const result = await db.getAllAsync(
+      'SELECT * FROM warehouses WHERE code = ?',
+      [code]
+    );
     return result[0] || null;
   },
 
-  async create(warehouse: Omit<Warehouse, 'id' | 'created_at'>): Promise<Warehouse> {
+  /* ---------------- CREATE ---------------- */
+  async create(input: CreateWarehouseInput): Promise<Warehouse> {
     const db = getDatabase();
-    const id = generateUUID();
-    const created_at = new Date().toISOString();
-    const updated_at = created_at;
+
+    const warehouse: Warehouse = {
+      code: input.code,
+      name: input.name,
+      location: input.location,
+      active: input.active ?? true,
+      lastModifiedBy: await getLoggedInUserName(),
+      lastModifiedOn: new Date().toISOString(),
+    };
 
     await db.runAsync(
-      `INSERT INTO warehouses (id, code, name, location, is_active, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `
+      INSERT INTO warehouses (
+        code,
+        name,
+        location,
+        lastModifiedBy,
+        lastModifiedOn,
+        active
+      )
+      VALUES (?, ?, ?, ?, ?, ?)
+      `,
       [
-        id,
         warehouse.code,
         warehouse.name,
-        warehouse.location || null,
-        warehouse.is_active !== undefined ? (warehouse.is_active ? 1 : 0) : 1,
-        created_at,
-        updated_at,
+        warehouse.location,
+        warehouse.lastModifiedBy,
+        warehouse.lastModifiedOn,
+        warehouse.active ? 1 : 0,
       ]
     );
 
-    return { id, ...warehouse, created_at, updated_at } as Warehouse;
+    return warehouse;
   },
 
-  async update(id: string, warehouse: Partial<Warehouse>): Promise<Warehouse> {
+  /* ---------------- UPDATE ---------------- */
+  async update(code: string, warehouse: Partial<Warehouse>): Promise<Warehouse> {
     const db = getDatabase();
     const fields: string[] = [];
     const values: any[] = [];
 
     Object.entries(warehouse).forEach(([key, value]) => {
-      if (key !== 'id' && key !== 'created_at' && value !== undefined) {
+      if (key !== 'code' && value !== undefined) {
         fields.push(`${key} = ?`);
-        values.push(typeof value === 'boolean' ? (value ? 1 : 0) : value);
+        values.push(
+          typeof value === 'boolean' ? (value ? 1 : 0) : value
+        );
       }
     });
 
-    if (fields.length > 0) {
-      values.push(id);
-      await db.runAsync(
-        `UPDATE warehouses SET ${fields.join(', ')} WHERE id = ?`,
-        values
-      );
+    if (fields.length === 0) {
+      return (await this.getById(code))!;
     }
 
-    return (await this.getById(id))!;
+    values.push(code);
+
+    const sql = `
+      UPDATE warehouses
+      SET ${fields.join(', ')}
+      WHERE code = ?
+    `;
+
+    await db.runAsync(sql, values);
+
+    return (await this.getById(code))!;
   },
 
-  async delete(id: string): Promise<void> {
+  /* ---------------- DELETE ---------------- */
+  async delete(code: string): Promise<void> {
     const db = getDatabase();
-    await db.runAsync('DELETE FROM warehouses WHERE id = ?', [id]);
+    await db.runAsync(
+      'DELETE FROM warehouses WHERE code = ?',
+      [code]
+    );
   },
 };
+
 
 export const userApi = {
   async getAll(includeInactive = false): Promise<User[]> {
@@ -1124,4 +1304,4 @@ export const vanStockApi = {
   },
 };
 
-export * from './sqlite-transactions';
+ 

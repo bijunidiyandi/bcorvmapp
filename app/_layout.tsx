@@ -3,7 +3,7 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { View, ActivityIndicator } from 'react-native';
 import { useFrameworkReady } from '@/hooks/useFrameworkReady';
-import { AuthProvider } from '@/lib/contexts/AuthContext';
+import { AuthProvider } from '@/lib/contexts/AuthContextNew';
 import { VanProvider } from '@/lib/contexts/VanContext';
 import { SessionProvider } from '@/lib/contexts/SessionContext';
 import { initDatabase } from '@/lib/services/database';

@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { colors } from '@/constants/colors';
-import { useAuth } from '@/lib/contexts/AuthContext';
+import { useAuth } from '@/lib/contexts/AuthContextNew';
 import { userApi } from '@/lib/services/auth';
 import { vanApi } from '@/lib/services/sqlite-api';
 import { UserWithDetails, Van } from '@/lib/types/database';

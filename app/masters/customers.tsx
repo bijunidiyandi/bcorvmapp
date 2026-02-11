@@ -23,7 +23,8 @@ import { Toast } from '@/components/common/Toast';
 import { ArrowLeft, Plus, Users, X, MapPin } from 'lucide-react-native';
 import { getCurrentPosition } from '@/lib/utils/geo';
 import { useToast } from '@/hooks/useToast';
-
+import { KeyboardAvoidingView } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 const showAlert = (title: string, message: string, onDismiss?: () => void) => {
   if (Platform.OS === 'web') {
     alert(`${title}\n\n${message}`);
@@ -300,7 +301,7 @@ export default function CustomersScreen() {
         )}
       </View>
 
-      <Modal visible={showForm} animationType="slide" transparent={true} onRequestClose={() => setShowForm(false)}>
+      {/* <Modal visible={showForm} animationType="slide" transparent={true} onRequestClose={() => setShowForm(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
@@ -558,8 +559,299 @@ export default function CustomersScreen() {
             </View>
           </View>
         </View>
-      </Modal>
+      </Modal> */}
+<Modal
+  visible={showForm}
+  animationType="slide"
+  transparent
+  statusBarTranslucent
+  onRequestClose={() => setShowForm(false)}
+>
+  <View style={styles.modalOverlay}>
 
+    {/* Bottom Sheet Wrapper */}
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      style={styles.bottomSheetWrapper}
+    >
+      <SafeAreaView style={styles.bottomSheet} edges={['bottom']}>
+
+        {/* HEADER */}
+        <View style={styles.modalHeader}>
+          <Text style={styles.modalTitle}>
+            {editingCustomer ? 'Edit Customer' : 'Add Customer'}
+          </Text>
+          <TouchableOpacity onPress={() => setShowForm(false)}>
+            <X size={24} color={colors.text} />
+          </TouchableOpacity>
+        </View>
+
+        {/* FORM */}
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{
+            padding: 20,
+            paddingBottom: 160, // 🔥 space for footer
+          }}
+        >
+             <View style={styles.form}>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Code *</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={formData.code}
+                    onChangeText={(text) => setFormData({ ...formData, code: text })}
+                    placeholder="Enter code"
+                  />
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Name *</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={formData.name}
+                    onChangeText={(text) => setFormData({ ...formData, name: text })}
+                    placeholder="Enter name"
+                  />
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Category</Text>
+                  <View style={styles.pickerContainer}>
+                    <Picker
+                      selectedValue={formData.category_id || ''}
+                      onValueChange={(value) => setFormData({ ...formData, category_id: value || null })}
+                      style={styles.picker}
+                    >
+                      <Picker.Item label="Select Category" value="" />
+                      {categories.map((c) => (
+                        <Picker.Item key={c.id} label={c.name} value={c.id} />
+                      ))}
+                    </Picker>
+                  </View>
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Contact Person</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={formData.contact_person}
+                    onChangeText={(text) => setFormData({ ...formData, contact_person: text })}
+                    placeholder="Enter contact person"
+                  />
+                </View>
+
+                <View style={styles.row}>
+                  <View style={[styles.inputGroup, styles.flex1]}>
+                    <Text style={styles.inputLabel}>Phone</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={formData.phone}
+                      onChangeText={(text) => setFormData({ ...formData, phone: text })}
+                      placeholder="Enter phone"
+                      keyboardType="phone-pad"
+                    />
+                  </View>
+
+                  <View style={[styles.inputGroup, styles.flex1]}>
+                    <Text style={styles.inputLabel}>Email</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={formData.email}
+                      onChangeText={(text) => setFormData({ ...formData, email: text })}
+                      placeholder="Enter email"
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                    />
+                  </View>
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Address</Text>
+                  <TextInput
+                    style={styles.textArea}
+                    value={formData.address}
+                    onChangeText={(text) => setFormData({ ...formData, address: text })}
+                    placeholder="Enter address"
+                    multiline
+                    numberOfLines={2}
+                    textAlignVertical="top"
+                  />
+                </View>
+
+                <View style={styles.row}>
+                  <View style={[styles.inputGroup, styles.flex1]}>
+                    <Text style={styles.inputLabel}>City</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={formData.city}
+                      onChangeText={(text) => setFormData({ ...formData, city: text })}
+                      placeholder="Enter city"
+                    />
+                  </View>
+
+                  <View style={[styles.inputGroup, styles.flex1]}>
+                    <Text style={styles.inputLabel}>State</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={formData.state}
+                      onChangeText={(text) => setFormData({ ...formData, state: text })}
+                      placeholder="Enter state"
+                    />
+                  </View>
+                </View>
+
+                <View style={styles.row}>
+                  <View style={[styles.inputGroup, styles.flex1]}>
+                    <Text style={styles.inputLabel}>Postal Code</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={formData.postal_code}
+                      onChangeText={(text) => setFormData({ ...formData, postal_code: text })}
+                      placeholder="Enter postal code"
+                    />
+                  </View>
+
+                  <View style={[styles.inputGroup, styles.flex1]}>
+                    <Text style={styles.inputLabel}>Tax Number</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={formData.tax_number}
+                      onChangeText={(text) => setFormData({ ...formData, tax_number: text })}
+                      placeholder="Enter tax number"
+                    />
+                  </View>
+                </View>
+
+                <View style={styles.row}>
+                  <View style={[styles.inputGroup, styles.flex1]}>
+                    <Text style={styles.inputLabel}>Credit Limit</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={formData.credit_limit}
+                      onChangeText={(text) => setFormData({ ...formData, credit_limit: text })}
+                      placeholder="0.00"
+                      keyboardType="decimal-pad"
+                    />
+                  </View>
+
+                  <View style={[styles.inputGroup, styles.flex1]}>
+                    <Text style={styles.inputLabel}>Credit Days</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={formData.credit_days}
+                      onChangeText={(text) => setFormData({ ...formData, credit_days: text })}
+                      placeholder="0"
+                      keyboardType="number-pad"
+                    />
+                  </View>
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Route</Text>
+                  <View style={styles.pickerContainer}>
+                    <Picker
+                      selectedValue={formData.route_id || ''}
+                      onValueChange={(value) => setFormData({ ...formData, route_id: value || null })}
+                      style={styles.picker}
+                    >
+                      <Picker.Item label="Select Route" value="" />
+                      {routes.map((r) => (
+                        <Picker.Item key={r.id} label={r.name} value={r.id} />
+                      ))}
+                    </Picker>
+                  </View>
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <View style={styles.labelRow}>
+                    <Text style={styles.inputLabel}>Geo Location</Text>
+                    <TouchableOpacity
+                      style={styles.locationButton}
+                      onPress={getCurrentLocation}
+                      disabled={loadingLocation}
+                    >
+                      <MapPin size={16} color={colors.primary} />
+                      <Text style={styles.locationButtonText}>
+                        {loadingLocation ? 'Getting Location...' : 'Get Current Location'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.row}>
+                    <View style={[styles.inputGroup, styles.flex1]}>
+                      <Text style={styles.inputLabelSmall}>Latitude</Text>
+                      <TextInput
+                        style={styles.input}
+                        value={formData.latitude}
+                        onChangeText={(text) => setFormData({ ...formData, latitude: text })}
+                        placeholder="e.g., 23.8103"
+                        keyboardType="decimal-pad"
+                      />
+                    </View>
+
+                    <View style={[styles.inputGroup, styles.flex1]}>
+                      <Text style={styles.inputLabelSmall}>Longitude</Text>
+                      <TextInput
+                        style={styles.input}
+                        value={formData.longitude}
+                        onChangeText={(text) => setFormData({ ...formData, longitude: text })}
+                        placeholder="e.g., 90.4125"
+                        keyboardType="decimal-pad"
+                      />
+                    </View>
+                  </View>
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Notes</Text>
+                  <TextInput
+                    style={styles.textArea}
+                    value={formData.notes}
+                    onChangeText={(text) => setFormData({ ...formData, notes: text })}
+                    placeholder="Enter notes"
+                    multiline
+                    numberOfLines={3}
+                    textAlignVertical="top"
+                  />
+                </View>
+
+                <View style={styles.toggleGroup}>
+                  <Text style={styles.inputLabel}>Active</Text>
+                  <TouchableOpacity
+                    style={styles.toggle}
+                    onPress={() => setFormData({ ...formData, is_active: !formData.is_active })}
+                  >
+                    <View style={[styles.toggleTrack, formData.is_active && styles.toggleTrackActive]}>
+                      <View style={[styles.toggleThumb, formData.is_active && styles.toggleThumbActive]} />
+                    </View>
+                    <Text style={styles.toggleLabel}>{formData.is_active ? 'Active' : 'Inactive'}</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+          {/* ⬇️ keep the rest of your form exactly the same */}
+        </ScrollView>
+
+        {/* FIXED FOOTER */}
+        <View style={styles.fixedFooter}>
+          <Button
+            title="Cancel"
+            variant="outline"
+            onPress={() => setShowForm(false)}
+            style={{ flex: 1 }}
+          />
+          <Button
+            title={saving ? 'Saving...' : 'Save'}
+            onPress={handleSave}
+            disabled={saving}
+            style={{ flex: 1 }}
+          />
+        </View>
+
+      </SafeAreaView>
+    </KeyboardAvoidingView>
+  </View>
+</Modal>
       {toast.visible && (
         <Toast
           message={toast.message}
@@ -593,7 +885,7 @@ const styles = StyleSheet.create({
   scrollView: { flex: 1 },
   scrollContent: { paddingHorizontal: 20, paddingBottom: 20 },
   modalOverlay: { flex: 1, backgroundColor: colors.overlay, justifyContent: 'flex-end' },
-  modalContent: { backgroundColor: colors.white, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '50%' },
+  modalContent: { backgroundColor: colors.white, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '90%' },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -661,4 +953,31 @@ const styles = StyleSheet.create({
   inputLabelSmall: { fontSize: 12, fontWeight: '600', color: colors.textSecondary },
   formActions: { flexDirection: 'row', gap: 12, padding: 20, borderTopWidth: 1, borderTopColor: colors.border },
   actionButton: { flex: 1 },
+  fixedFooter: {
+  position: 'absolute',
+  left: 0,
+  right: 0,
+  bottom: 0,
+  flexDirection: 'row',
+  gap: 12,
+  paddingHorizontal: 20,
+  paddingTop: 16,
+  paddingBottom: 16,
+  borderTopWidth: 1,
+  borderTopColor: colors.border,
+  backgroundColor: colors.white,
+},
+bottomSheetWrapper: {
+  flex: 1,
+  justifyContent: 'flex-end',
+},
+
+bottomSheet: {
+  height: '90%',               // 🔥 EXACT REQUIREMENT
+  backgroundColor: colors.white,
+  borderTopLeftRadius: 20,
+  borderTopRightRadius: 20,
+  overflow: 'hidden',
+},
+
 });
