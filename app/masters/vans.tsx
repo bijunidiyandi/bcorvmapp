@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -7,20 +7,37 @@ import {
   TouchableOpacity,
   TextInput,
   Modal,
-  FlatList,
   Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Picker } from '@react-native-picker/picker';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+
 import { colors } from '@/constants/colors';
-import { vanApi, userApi, routeApi, warehouseApi } from '@/lib/services/sqlite-api';
-import { Van, User, Route, Warehouse } from '@/lib/types/database';
 import { Button } from '@/components/common/Button';
 import { Loading } from '@/components/common/Loading';
 import { EmptyState } from '@/components/common/EmptyState';
 import { MasterListItem } from '@/components/masters/MasterListItem';
 import { SearchBar } from '@/components/masters/SearchBar';
-import { ArrowLeft, Plus, Truck, X, Check } from 'lucide-react-native';
+import { SearchableSelect } from '@/components/common/SearchableSelect';
+
+import { ArrowLeft, Plus, Truck, X, RefreshCw } from 'lucide-react-native';
+
+import { vanApi, routeApi, warehousesApi, userApi } from '@/lib/services/sqlite-api';
+import { createEntity, fetchEntity, updateEntity } from '@/lib/services/webapi';
+
+import type { Van, Route, Warehouse, User } from '@/lib/types/database';
+
+type VanForm = {
+  code: string;
+  vehiclenumber: string;
+  warehousecode: string; 
+  usercode: string;      
+  routecode: string;     
+  active: boolean;
+};
+
+const ENTITY_API = 'Vans';
 
 const showAlert = (title: string, message: string, onDismiss?: () => void) => {
   if (Platform.OS === 'web') {
@@ -28,54 +45,56 @@ const showAlert = (title: string, message: string, onDismiss?: () => void) => {
     onDismiss?.();
   } else {
     const AlertModule = require('react-native').Alert;
-    if (onDismiss) {
-      AlertModule.alert(title, message, [{ text: 'OK', onPress: onDismiss }]);
-    } else {
-      AlertModule.alert(title, message);
-    }
+    AlertModule.alert(title, message, [{ text: 'OK', onPress: onDismiss }]);
   }
 };
 
 export default function VansScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
   const [vans, setVans] = useState<Van[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
   const [routes, setRoutes] = useState<Route[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+
   const [searchQuery, setSearchQuery] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editingVan, setEditingVan] = useState<Van | null>(null);
-  const [saving, setSaving] = useState(false);
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<VanForm>({
     code: '',
-    vehicle_number: '',
-    user_id: null as string | null,
-    route_id: null as string | null,
-    warehouse_id: null as string | null,
-    is_active: true,
+    vehiclenumber: '',
+    warehousecode: '',
+    usercode: '',
+    routecode: '',
+    active: true,
   });
 
   useEffect(() => {
-    loadData();
+    loadAll();
   }, []);
 
-  const loadData = async () => {
+  const loadAll = async () => {
+    setLoading(true);
     try {
-      const [vansData, usersData, routesData, warehousesData] = await Promise.all([
+      const [vansData, routesData, warehousesData, usersData] = await Promise.all([
         vanApi.getAll(true),
-        userApi.getAll(),
-        routeApi.getAll(),
-        warehouseApi.getAll(),
+        routeApi.getAll(true),
+        warehousesApi.getAll(true),
+        userApi.getAll(true),
       ]);
+
       setVans(vansData);
-      setUsers(usersData.filter((u: User) => u.role === 'SALESMAN'));
       setRoutes(routesData);
       setWarehouses(warehousesData);
+      setUsers(usersData);
     } catch (err) {
-      console.error('Error loading data:', err);
-      showAlert('Error', 'Failed to load data');
+      console.error('Error loading vans screen data:', err);
+      showAlert('Error', 'Failed to load screen data');
     } finally {
       setLoading(false);
     }
@@ -85,61 +104,91 @@ export default function VansScreen() {
     setEditingVan(null);
     setFormData({
       code: '',
-      vehicle_number: '',
-      user_id: null,
-      route_id: null,
-      warehouse_id: null,
-      is_active: true,
+      vehiclenumber: '',
+      warehousecode: '',
+      usercode: '',
+      routecode: '',
+      active: true,
     });
     setShowForm(true);
   };
 
-  const handleEdit = (van: Van) => {
+  const handleEdit = (van: any) => {
     setEditingVan(van);
     setFormData({
       code: van.code,
-      vehicle_number: van.vehicle_number,
-      user_id: van.user_id,
-      route_id: van.route_id,
-      warehouse_id: van.warehouse_id,
-      is_active: van.is_active,
+      vehiclenumber: van.vehiclenumber || van.vehicleNumber || '', 
+      warehousecode: van.warehousecode || van.warehouseCode || '',
+      usercode: van.usercode || van.userCode || '',
+      routecode: van.routecode || van.routeCode || '',
+      active: van.active,
     });
     setShowForm(true);
   };
 
+  const filteredVans = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return vans;
+    return vans.filter((v: any) => {
+      const code = v.code?.toLowerCase() || '';
+      const plate = (v.vehiclenumber || v.vehicleNumber || '').toLowerCase();
+      return code.includes(q) || plate.includes(q);
+    });
+  }, [vans, searchQuery]);
+
   const handleSave = async () => {
-    if (!formData.code.trim() || !formData.vehicle_number.trim()) {
-      showAlert('Error', 'Code and vehicle number are required');
+    if (!formData.code.trim() || !formData.vehiclenumber.trim()) {
+      showAlert('Error', 'Code and Vehicle Number are required');
       return;
     }
 
     setSaving(true);
     try {
+      const payload = {
+        code: formData.code.trim(),
+        vehicleNumber: formData.vehiclenumber.trim(),
+        warehouseCode: formData.warehousecode,
+        userCode: formData.usercode,
+        routeCode: formData.routecode,
+        active: formData.active,
+      };
+
       if (editingVan) {
-        await vanApi.update(editingVan.id, formData);
+        await vanApi.update(editingVan.code, payload);
+        try { await updateEntity(ENTITY_API, editingVan.code, payload); } catch (e) { console.warn(e); }
       } else {
-        await vanApi.create(formData);
+        await vanApi.create(payload);
+        try { await createEntity(ENTITY_API, payload); } catch (e) { console.warn(e); }
       }
-      await loadData();
+
+      await loadAll();
       setShowForm(false);
     } catch (err: any) {
-      console.error('Error saving van:', err);
-      showAlert('Error', err.message || 'Failed to save van');
+      showAlert('Error', err?.message || 'Failed to save van');
     } finally {
       setSaving(false);
     }
   };
 
-  const filteredVans = vans.filter(
-    (v) =>
-      v.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      v.vehicle_number.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const handleHardRefresh = async () => {
+    setLoading(true);
+    try {
+      const apiVans = await fetchEntity(ENTITY_API);
+      await vanApi.clearAll();
+      await vanApi.bulkInsert(apiVans);
+      await loadAll();
+      showAlert('Success', 'Vans refreshed from server');
+    } catch (err: any) {
+      showAlert('Error', 'Failed to refresh vans');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   if (loading) {
     return (
       <View style={styles.container}>
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: insets.top + 20 }]}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
             <ArrowLeft size={24} color={colors.text} />
           </TouchableOpacity>
@@ -153,41 +202,37 @@ export default function VansScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      {/* HEADER */}
+      <View style={[styles.header, { paddingTop: insets.top + 20 }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <ArrowLeft size={24} color={colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Vans</Text>
-        <TouchableOpacity onPress={handleAdd} style={styles.addButton}>
-          <Plus size={24} color={colors.primary} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: 12 }}>
+          <TouchableOpacity onPress={handleHardRefresh}>
+            <RefreshCw size={22} color={colors.text} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleAdd}>
+            <Plus size={24} color={colors.primary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.content}>
-        <View style={styles.searchContainer}>
-          <SearchBar
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholder="Search vans..."
-          />
-        </View>
+      <View style={styles.searchContainer}>
+        <SearchBar value={searchQuery} onChangeText={setSearchQuery} placeholder="Search vans..." />
+      </View>
 
         {filteredVans.length === 0 ? (
-          <EmptyState
-            icon={Truck}
-            title="No Vans Found"
-            message={searchQuery ? 'No vans match your search' : 'Add your first van to get started'}
-            actionLabel={searchQuery ? undefined : 'Add Van'}
-            onAction={searchQuery ? undefined : handleAdd}
-          />
+          <EmptyState icon={Truck} title="No Vans Found" message="Add your first van to get started" />
         ) : (
           <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-            {filteredVans.map((van) => (
+            {filteredVans.map((van: any) => (
               <MasterListItem
-                key={van.id}
-                title={van.vehicle_number}
-                subtitle={van.code}
-                isActive={van.is_active}
+                key={van.code}
+                title={van.vehiclenumber || van.vehicleNumber || van.code}
+                subtitle={`${van.code}${van.warehousecode || van.warehouseCode ? ` • WH: ${van.warehousecode || van.warehouseCode}` : ''}`}
+                isActive={van.active}
                 onPress={() => handleEdit(van)}
               />
             ))}
@@ -195,25 +240,27 @@ export default function VansScreen() {
         )}
       </View>
 
-      <Modal visible={showForm} animationType="slide" transparent={true} onRequestClose={() => setShowForm(false)}>
+      {/* MODAL FORM */}
+      <Modal visible={showForm} animationType="slide" transparent statusBarTranslucent onRequestClose={() => setShowForm(false)}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{editingVan ? 'Edit Van' : 'Add Van'}</Text>
-              <TouchableOpacity onPress={() => setShowForm(false)} style={styles.modalCloseButton}>
-                <X size={24} color={colors.text} />
-              </TouchableOpacity>
-            </View>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.bottomSheetWrapper}>
+            <SafeAreaView style={styles.bottomSheet} edges={['bottom']}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>{editingVan ? 'Edit Van' : 'Add Van'}</Text>
+                <TouchableOpacity onPress={() => setShowForm(false)}>
+                  <X size={24} color={colors.text} />
+                </TouchableOpacity>
+              </View>
 
-            <ScrollView style={styles.formScrollView}>
-              <View style={styles.form}>
+              <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 20, paddingBottom: 140 }}>
                 <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>Code *</Text>
                   <TextInput
-                    style={styles.input}
+                    style={[styles.input, editingVan && styles.inputDisabled]}
                     value={formData.code}
-                    onChangeText={(text) => setFormData({ ...formData, code: text })}
-                    placeholder="Enter code"
+                    editable={!editingVan}
+                    selectTextOnFocus={!editingVan}
+                    onChangeText={(t) => setFormData({ ...formData, code: t })}
                   />
                 </View>
 
@@ -221,85 +268,58 @@ export default function VansScreen() {
                   <Text style={styles.inputLabel}>Vehicle Number *</Text>
                   <TextInput
                     style={styles.input}
-                    value={formData.vehicle_number}
-                    onChangeText={(text) => setFormData({ ...formData, vehicle_number: text })}
-                    placeholder="Enter vehicle number"
+                    value={formData.vehiclenumber}
+                    onChangeText={(t) => setFormData({ ...formData, vehiclenumber: t })}
                   />
                 </View>
 
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Assign to User</Text>
-                  <View style={styles.pickerContainer}>
-                    <Picker
-                      selectedValue={formData.user_id || ''}
-                      onValueChange={(value) => setFormData({ ...formData, user_id: value || null })}
-                      style={styles.picker}
-                    >
-                      <Picker.Item label="Select User" value="" />
-                      {users.map((u) => (
-                        <Picker.Item key={u.id} label={`${u.user_name} (${u.user_id})`} value={u.id} />
-                      ))}
-                    </Picker>
-                  </View>
-                </View>
+                <SearchableSelect 
+                  label="Warehouse"
+                  placeholder="Select Warehouse"
+                  value={formData.warehousecode}
+                  options={warehouses.map(w => ({ code: w.code || (w as any).Code, name: w.name || (w as any).Name }))}
+                  onSelect={(val) => setFormData({ ...formData, warehousecode: val })}
+                />
 
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Route</Text>
-                  <View style={styles.pickerContainer}>
-                    <Picker
-                      selectedValue={formData.route_id || ''}
-                      onValueChange={(value) => setFormData({ ...formData, route_id: value || null })}
-                      style={styles.picker}
-                    >
-                      <Picker.Item label="Select Route" value="" />
-                      {routes.map((r) => (
-                        <Picker.Item key={r.id} label={r.name} value={r.id} />
-                      ))}
-                    </Picker>
-                  </View>
-                </View>
+                <SearchableSelect 
+                  label="User"
+                  placeholder="Select User"
+                  value={formData.usercode}
+                  options={users.map(u => ({ 
+                    code: u.user_id || u.code || (u as any).User_Id, 
+                    name: u.user_name || u.name || (u as any).User_Name 
+                  }))}
+                  onSelect={(val) => setFormData({ ...formData, usercode: val })}
+                />
 
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Warehouse</Text>
-                  <View style={styles.pickerContainer}>
-                    <Picker
-                      selectedValue={formData.warehouse_id || ''}
-                      onValueChange={(value) => setFormData({ ...formData, warehouse_id: value || null })}
-                      style={styles.picker}
-                    >
-                      <Picker.Item label="Select Warehouse" value="" />
-                      {warehouses.map((w) => (
-                        <Picker.Item key={w.id} label={w.name} value={w.id} />
-                      ))}
-                    </Picker>
-                  </View>
-                </View>
+                <SearchableSelect 
+                  label="Route"
+                  placeholder="Select Route"
+                  value={formData.routecode}
+                  options={routes.map(r => ({ code: r.code || (r as any).Code, name: r.name || (r as any).Name }))}
+                  onSelect={(val) => setFormData({ ...formData, routecode: val })}
+                />
 
                 <View style={styles.toggleGroup}>
                   <Text style={styles.inputLabel}>Active</Text>
                   <TouchableOpacity
                     style={styles.toggle}
-                    onPress={() => setFormData({ ...formData, is_active: !formData.is_active })}
+                    onPress={() => setFormData({ ...formData, active: !formData.active })}
                   >
-                    <View style={[styles.toggleTrack, formData.is_active && styles.toggleTrackActive]}>
-                      <View style={[styles.toggleThumb, formData.is_active && styles.toggleThumbActive]} />
+                    <View style={[styles.toggleTrack, formData.active && styles.toggleTrackActive]}>
+                      <View style={[styles.toggleThumb, formData.active && styles.toggleThumbActive]} />
                     </View>
-                    <Text style={styles.toggleLabel}>{formData.is_active ? 'Active' : 'Inactive'}</Text>
+                    <Text style={styles.toggleLabel}>{formData.active ? 'Active' : 'Inactive'}</Text>
                   </TouchableOpacity>
                 </View>
-              </View>
-            </ScrollView>
+              </ScrollView>
 
-            <View style={styles.formActions}>
-              <Button
-                title="Cancel"
-                onPress={() => setShowForm(false)}
-                variant="outline"
-                style={styles.actionButton}
-              />
-              <Button title={saving ? 'Saving...' : 'Save'} onPress={handleSave} disabled={saving} style={styles.actionButton} />
-            </View>
-          </View>
+              <View style={styles.fixedFooter}>
+                <Button title="Cancel" variant="outline" onPress={() => setShowForm(false)} style={{ flex: 1 }} />
+                <Button title={saving ? 'Saving...' : 'Save'} onPress={handleSave} disabled={saving} style={{ flex: 1 }} />
+              </View>
+            </SafeAreaView>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
     </View>
@@ -313,7 +333,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 60,
     paddingBottom: 20,
     backgroundColor: colors.white,
     borderBottomWidth: 1,
@@ -321,13 +340,19 @@ const styles = StyleSheet.create({
   },
   backButton: { padding: 8, width: 40 },
   headerTitle: { fontSize: 20, fontWeight: '700', color: colors.text },
-  addButton: { padding: 8 },
   content: { flex: 1 },
   searchContainer: { padding: 20 },
   scrollView: { flex: 1 },
   scrollContent: { paddingHorizontal: 20, paddingBottom: 20 },
   modalOverlay: { flex: 1, backgroundColor: colors.overlay, justifyContent: 'flex-end' },
-  modalContent: { backgroundColor: colors.white, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '50%' },
+  bottomSheetWrapper: { flex: 1, justifyContent: 'flex-end' },
+  bottomSheet: {
+    height: '85%', // Increased to fit the 3 select components + inputs comfortably
+    backgroundColor: colors.white,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    overflow: 'hidden',
+  },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -338,28 +363,20 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   modalTitle: { fontSize: 20, fontWeight: '700', color: colors.text },
-  modalCloseButton: { padding: 4 },
-  formScrollView: { maxHeight: 300 },
-  form: { padding: 20, gap: 16 },
-  inputGroup: { gap: 8 },
+  inputGroup: { gap: 8, marginBottom: 12 },
   inputLabel: { fontSize: 14, fontWeight: '600', color: colors.text },
   input: {
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 8,
-    padding: 12,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     fontSize: 16,
     color: colors.text,
     backgroundColor: colors.white,
+    minHeight: 44,
   },
-  pickerContainer: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    backgroundColor: colors.white,
-    overflow: 'hidden',
-  },
-  picker: { height: 50 },
+  inputDisabled: { backgroundColor: '#f0f0f0', color: '#888' },
   toggleGroup: { gap: 8 },
   toggle: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   toggleTrack: { width: 48, height: 28, borderRadius: 14, backgroundColor: colors.border, padding: 2 },
@@ -367,6 +384,18 @@ const styles = StyleSheet.create({
   toggleThumb: { width: 24, height: 24, borderRadius: 12, backgroundColor: colors.white },
   toggleThumbActive: { marginLeft: 20 },
   toggleLabel: { fontSize: 14, color: colors.text },
-  formActions: { flexDirection: 'row', gap: 12, padding: 20, borderTopWidth: 1, borderTopColor: colors.border },
-  actionButton: { flex: 1 },
+  fixedFooter: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 16,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    backgroundColor: colors.white,
+  },
 });

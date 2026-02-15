@@ -3,8 +3,8 @@ export interface Database {
     Tables: {
       vans: {
         Row: Van;
-        Insert: Omit<Van, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<Van, 'id' | 'created_at' | 'updated_at'>>;
+        Insert: Omit<Van, 'code' >;
+        Update: Partial<Omit<Van, 'code'>>;
       };
       routes: {
         Row: Route;
@@ -13,8 +13,8 @@ export interface Database {
       };
       warehouses: {
         Row: Warehouse;
-        Insert: Omit<Warehouse, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<Warehouse, 'id' | 'created_at' | 'updated_at'>>;
+        Insert: Omit<Warehouse, 'code'>;
+        Update: Partial<Omit<Warehouse, 'code'>>;
       };
       item_categories: {
         Row: ItemCategory;
@@ -38,8 +38,8 @@ export interface Database {
       };
       customers: {
         Row: Customer;
-        Insert: Omit<Customer, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<Customer, 'id' | 'created_at' | 'updated_at'>>;
+        Insert: Omit<Customer, 'code'>;
+        Update: Partial<Omit<Customer, 'code'>>;
       };
       van_loads: {
         Row: VanLoad;
@@ -100,17 +100,82 @@ export interface Database {
   };
 }
 
-export interface Van {
-  id: string;
+// -----
+
+export interface CustomerCategory {
   code: string;
-  vehicle_number: string;
-  user_id: string | null;
-  route_id: string | null;
-  warehouse_id: string | null;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
+  name: string;
+  description: string | null;
+  discount_percentage: number;
+   lastModifiedBy: string;
+  lastModifiedOn?: string ;
+  active: boolean;
 }
+;
+
+export type CreateCustomerCategoryInput ={
+   code: string;
+  name: string;
+  description: string | null;
+  discount_percentage: number;
+  active: boolean;
+};
+
+export type CreateCustomerInput= {
+ code: string;
+  name: string;
+  categorycode: string | null;
+  routecode: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  credit_limit: number;
+  outstanding_balance: number;
+
+  active: boolean;
+}
+
+export interface Customer {
+  code: string;
+  name: string;
+  categorycode: string | null;
+  routecode: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  credit_limit: number;
+  outstanding_balance: number;
+   lastModifiedBy: string;
+  lastModifiedOn?: string ;
+  active: boolean;
+}
+
+
+export interface Van {
+  code: string;
+  vehicleNumber: string; // Changed from vehiclenumber
+  userCode: string;      // Changed from usercode
+  routeCode: string;     // Changed from routecode
+  warehouseCode: string; // Changed from warehousecode
+  lastModifiedBy: string;
+  lastModifiedOn?: string;
+  active: boolean;
+}
+
+
+export type CreateVanInput = {
+  code: string;
+  vehicleNumber: string; // Changed from vehiclenumber
+  userCode: string;      // Changed from usercode
+  routeCode: string;     // Changed from routecode
+  warehouseCode: string; // Changed from warehousecode
+ 
+  active: boolean;
+};
 
 export interface Route {
  
@@ -118,7 +183,7 @@ export interface Route {
   name: string;
   description: string;
   lastModifiedBy: string;
-  lastModifiedOn?: string | null;
+  lastModifiedOn?: string  ;
   active: boolean;
 }
 export type CreateRouteInput = {
@@ -179,36 +244,7 @@ export interface Item {
   created_at: string;
   updated_at: string;
 }
-
-export interface CustomerCategory {
-  id: string;
-  code: string;
-  name: string;
-  description: string | null;
-  discount_percentage: number;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface Customer {
-  id: string;
-  code: string;
-  name: string;
-  category_id: string | null;
-  route_id: string | null;
-  phone: string | null;
-  email: string | null;
-  address: string | null;
-  latitude: number | null;
-  longitude: number | null;
-  credit_limit: number;
-  outstanding_balance: number;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
+ 
 export interface VanLoad {
   id: string;
   van_id: string;
